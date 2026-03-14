@@ -62,18 +62,35 @@ Format:
   // Gemini 2.0 Flash — free tier, supports Google Search grounding
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
 
+  // const res = await fetch(url, {
+  //   method: "POST",
+  //   headers: { "Content-Type": "application/json" },
+  //   body: JSON.stringify({
+  //     contents: [{ parts: [{ text: prompt }] }],
+  //     generationConfig: {
+  //       temperature:     1,
+  //       maxOutputTokens: 4000,
+  //       responseMimeType: "application/json",  // force JSON output
+  //     },
+  //   }),
+  // });
+
+
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature:     1,
-        maxOutputTokens: 4000,
-        responseMimeType: "application/json",  // force JSON output
-      },
+      contents: [{ parts: [{ text: "Say hello in one word" }] }],
+      generationConfig: { maxOutputTokens: 10 },
     }),
   });
+  
+  const data1 = await res.json();
+  console.log("STATUS:", res.status);
+  console.log("RESPONSE:", JSON.stringify(data1, null, 2));
+  process.exit(0);
+
+  
 
   if (!res.ok) {
     const err = await res.text();
