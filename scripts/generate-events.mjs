@@ -10,7 +10,7 @@ const db = getFirestore();
 
 // ── Config ────────────────────────────────
 const ADMIN_UID        = process.env.ADMIN_UID;          // your Firebase UID
-const GEMINI_KEY       = process.env.GEMINI_API_KEY;
+const GROQ_KEY         = process.env.GROQ_API_KEY;
 const EVENTS_PER_RUN   = 20;
 const TODAY            = new Date().toISOString().split("T")[0];
 
@@ -60,37 +60,21 @@ Format:
 `;
 
   // Gemini 2.0 Flash — free tier, supports Google Search grounding
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
-
-  // const res = await fetch(url, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify({
-  //     contents: [{ parts: [{ text: prompt }] }],
-  //     generationConfig: {
-  //       temperature:     1,
-  //       maxOutputTokens: 4000,
-  //       responseMimeType: "application/json",  // force JSON output
-  //     },
-  //   }),
-  // });
-
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
 
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: "Say hello in one word" }] }],
-      generationConfig: { maxOutputTokens: 10 },
+      contents: [{ parts: [{ text: prompt }] }],
+      tools: [{ googleSearch: {} }],   // grounding with live Google Search
+      generationConfig: {
+        temperature:     1,
+        maxOutputTokens: 4000,
+        responseMimeType: "application/json",  // force JSON output
+      },
     }),
   });
-  
-  const data1 = await res.json();
-  console.log("STATUS:", res.status);
-  console.log("RESPONSE:", JSON.stringify(data1, null, 2));
-  process.exit(0);
-
-  
 
   if (!res.ok) {
     const err = await res.text();
@@ -153,8 +137,8 @@ async function saveEvents(events) {
 // ── Main ──────────────────────────────────
 async function main() {
   try {
-    if (!ADMIN_UID)   throw new Error("ADMIN_UID env var missing");
-    if (!GEMINI_KEY)  throw new Error("GEMINI_API_KEY env var missing");
+    if (!ADMIN_UID)  throw new Error("ADMIN_UID env var missing");
+    if (!GROQ_KEY)   throw new Error("GROQ_API_KEY env var missing");
     if (!process.env.FIREBASE_SERVICE_ACCOUNT) throw new Error("FIREBASE_SERVICE_ACCOUNT env var missing");
 
     const raw      = await generateEvents();

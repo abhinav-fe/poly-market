@@ -194,3 +194,6 @@ export default function EventCard({ event, myPrediction }) {
 // NOTE: OfficialBadge is rendered inside EventCard header via isOfficial prop
 // The EventCard already receives the full event object including isOfficial
 // The badge rendering is handled inline in the header section
+// NOTE: OfficialBadge is rendered inside EventCard header via isOfficial prop
+// The EventCard already receives the full event object including isOfficial
+// The badge rendering is handled inline in the header section
