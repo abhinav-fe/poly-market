@@ -1,0 +1,30 @@
+name: 🔮 Daily Event Generator
+
+on:
+  schedule:
+    - cron: "30 2 * * *"   # 8:00 AM IST = 2:30 AM UTC
+  workflow_dispatch:        # allow manual trigger from GitHub UI
+
+jobs:
+  generate:
+    name: Generate Today's Events
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install firebase-admin
+        run: npm install firebase-admin
+
+      - name: Run event generator
+        env:
+          GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ADMIN_UID:                ${{ secrets.ADMIN_UID }}
+        run: node scripts/generate-events.mjs

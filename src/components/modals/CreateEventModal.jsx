@@ -1,23 +1,36 @@
 "use client";
 import { useState } from "react";
-import { useApp } from "@/store/AppContext";
+import { useAuth } from "@/store/AuthContext";
+import { createEvent } from "@/lib/firestore";
 import { CATEGORIES } from "@/constants";
 import Modal from "@/components/ui/Modal";
+import { useApp } from "@/store/AppContext";
 
 export default function CreateEventModal() {
-  const { createEvent, setModal, showToast } = useApp();
+  const { user }    = useAuth();
+  const { setModal } = useApp();
   const [form, setForm] = useState({ title: "", category: "Cricket", endsAt: "", opt1: "", opt2: "", tags: "" });
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSubmit = () => {
-    if (!form.title || !form.endsAt || !form.opt1 || !form.opt2) { showToast("Fill all fields", "error"); return; }
-    createEvent(form);
-    setModal(null);
+  const handleSubmit = async () => {
+    if (!form.title || !form.endsAt || !form.opt1 || !form.opt2) { setError("Fill all fields"); return; }
+    setLoading(true);
+    try {
+      await createEvent(form, user);
+      setModal(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <Modal>
       <h3 className="font-bold text-base mb-4">Create a Prediction Event</h3>
+      {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
       <div className="flex flex-col gap-3">
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Event question</label>
@@ -52,8 +65,9 @@ export default function CreateEventModal() {
           <input value={form.tags} onChange={e => set("tags", e.target.value)} placeholder="BCCI, Test Cricket, India"
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500" />
         </div>
-        <button onClick={handleSubmit} className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-sm mt-1">
-          🔮 Publish Event
+        <button onClick={handleSubmit} disabled={loading}
+          className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 font-bold text-sm mt-1">
+          {loading ? "Publishing..." : "🔮 Publish Event"}
         </button>
       </div>
     </Modal>
