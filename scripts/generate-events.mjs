@@ -1,4 +1,3 @@
-cat > scripts/generate-events.mjs << 'EOF'
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, Timestamp }      from "firebase-admin/firestore";
 
@@ -138,4 +137,3 @@ async function main() {
 }
 
 main();
-EOF
