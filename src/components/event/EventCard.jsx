@@ -1,28 +1,40 @@
 "use client";
 import { useState } from "react";
 import { useAuth } from "@/store/AuthContext";
-import { placePrediction, resolveEvent } from "@/lib/firestore";
+import { placePrediction, resolveEvent, getDocs } from "@/lib/firestore";
 import { totalVotes, pct } from "@/utils/helpers";
 import Badge from "@/components/ui/Badge";
 import ProgressBar from "@/components/ui/ProgressBar";
 import CommentSection from "@/components/comments/CommentSection";
 import ShareButton from "@/components/share/ShareButton";
+import EditEventModal from "@/components/modals/EditEventModal";
+import DeleteConfirmModal from "@/components/modals/DeleteConfirmModal";
 import { buildEventShare, buildPredictionShare } from "@/components/share/useShare";
 import { QUICK_STAKES } from "@/constants";
+import { predsCol } from "@/lib/firestore";
+import { getDocs as firestoreGetDocs } from "firebase/firestore";
+
+const ADMIN_UID = process.env.NEXT_PUBLIC_ADMIN_UID;
 
 export default function EventCard({ event, myPrediction }) {
-  const { user, dbUser } = useAuth();
-  const [showComments, setShowComments] = useState(false);
-  const [showPredict,  setShowPredict]  = useState(false);
-  const [selectedOpt,  setSelectedOpt]  = useState(null);
-  const [stakeAmt,     setStakeAmt]     = useState(100);
-  const [staking,      setStaking]      = useState(false);
-  const [resolving,    setResolving]    = useState(false);
-  const [showResolve,  setShowResolve]  = useState(false);
-  const [toast,        setToast]        = useState(null);
+  const { user, dbUser }  = useAuth();
+  const [showComments,  setShowComments]  = useState(false);
+  const [showPredict,   setShowPredict]   = useState(false);
+  const [showResolve,   setShowResolve]   = useState(false);
+  const [showEdit,      setShowEdit]      = useState(false);
+  const [showDelete,    setShowDelete]    = useState(false);
+  const [showActions,   setShowActions]   = useState(false);
+  const [selectedOpt,   setSelectedOpt]   = useState(null);
+  const [stakeAmt,      setStakeAmt]      = useState(100);
+  const [staking,       setStaking]       = useState(false);
+  const [resolving,     setResolving]     = useState(false);
+  const [hasPreds,      setHasPreds]      = useState(null); // null = not checked yet
+  const [toast,         setToast]         = useState(null);
 
   const tv        = totalVotes(event);
   const isCreator = user?.uid === event.createdBy;
+  const isAdmin   = user?.uid === ADMIN_UID;
+  const canManage = (isCreator || isAdmin) && !event.resolved;
   const isWinner  = myPrediction && event.resolved && event.winner === myPrediction.optionId;
   const isLoser   = myPrediction && event.resolved && event.winner !== myPrediction.optionId;
 
@@ -58,184 +70,212 @@ export default function EventCard({ event, myPrediction }) {
     }
   };
 
+  // Check predictions before opening edit modal
+  const handleEditClick = async () => {
+    if (hasPreds === null) {
+      const snap = await firestoreGetDocs(predsCol(event.id));
+      setHasPreds(!snap.empty);
+    }
+    setShowActions(false);
+    setShowEdit(true);
+  };
+
   const eventSharePayload      = buildEventShare(event);
   const predictionSharePayload = myPrediction ? buildPredictionShare(event, myPrediction) : null;
 
   return (
-    <div className={`rounded-2xl border p-4 bg-gray-900 relative
-      ${event.resolved ? "border-gray-700 opacity-90" : "border-gray-700"}
-      ${isWinner ? "border-emerald-500/60" : ""}
-      ${isLoser  ? "border-red-800/40"     : ""}`}>
+    <>
+      <div className={`rounded-2xl border p-4 bg-gray-900 relative
+        ${event.resolved ? "border-gray-700 opacity-90" : "border-gray-700"}
+        ${isWinner ? "border-emerald-500/60" : ""}
+        ${isLoser  ? "border-red-800/40"     : ""}`}>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`absolute top-2 right-2 px-3 py-1 rounded-full text-xs font-semibold z-10
-          ${toast.type === "error" ? "bg-red-600" : "bg-emerald-600"}`}>
-          {toast.msg}
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="flex items-start gap-2 mb-2">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <Badge category={event.category} />
-            {event.isOfficial && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-800 text-indigo-200 font-bold">🔮 Official</span>}
-            {event.resolved   && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">Resolved</span>}
-            {isWinner && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-700 text-emerald-200 font-bold">✅ You called it!</span>}
-            {isLoser  && <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-300">❌ Wrong call</span>}
+        {/* Toast */}
+        {toast && (
+          <div className={`absolute top-2 right-2 px-3 py-1 rounded-full text-xs font-semibold z-10
+            ${toast.type === "error" ? "bg-red-600" : "bg-emerald-600"}`}>
+            {toast.msg}
           </div>
-          <p className="font-semibold text-sm leading-snug">{event.title}</p>
-        </div>
-      </div>
+        )}
 
-      {/* Tags */}
-      <div className="flex gap-1 flex-wrap mb-3">
-        {event.tags?.map(t => <span key={t} className="text-xs text-gray-500">#{t}</span>)}
-      </div>
-
-      {/* Options */}
-      <div className="flex flex-col gap-2 mb-3">
-        {event.options.map(o => {
-          const p        = pct(o.votes, tv);
-          const isMyPick = myPrediction?.optionId === o.id;
-          const isWinOpt = event.resolved && event.winner === o.id;
-          return (
-            <div key={o.id}>
-              <div className="flex justify-between text-xs mb-1">
-                <span className={`font-medium ${isMyPick ? "text-indigo-300" : "text-gray-300"}`}>
-                  {o.label}
-                  {isMyPick  && <span className="text-indigo-400"> ← your pick</span>}
-                  {isWinOpt && !isMyPick && <span className="text-emerald-400"> ✓ winner</span>}
-                </span>
-                <span className="text-gray-400">{p}% · 🪙 {o.pool.toLocaleString()}</span>
-              </div>
-              <ProgressBar pct={p} isWin={isWinOpt} isMyPick={isMyPick} />
+        {/* Header */}
+        <div className="flex items-start gap-2 mb-2">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <Badge category={event.category} />
+              {event.isOfficial && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-800 text-indigo-200 font-bold">🔮 Official</span>}
+              {event.resolved   && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">Resolved</span>}
+              {isWinner && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-700 text-emerald-200 font-bold">✅ You called it!</span>}
+              {isLoser  && <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-300">❌ Wrong call</span>}
             </div>
-          );
-        })}
+            <p className="font-semibold text-sm leading-snug">{event.title}</p>
+          </div>
+
+          {/* ⋮ Actions menu for creator/admin */}
+          {canManage && (
+            <div className="relative shrink-0">
+              <button onClick={() => setShowActions(p => !p)}
+                className="w-7 h-7 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-gray-400 text-lg leading-none">
+                ⋮
+              </button>
+              {showActions && (
+                <div className="absolute right-0 top-8 z-20 bg-gray-800 border border-gray-700 rounded-xl shadow-xl overflow-hidden min-w-32">
+                  <button onClick={handleEditClick}
+                    className="w-full px-4 py-2.5 text-xs text-left text-gray-200 hover:bg-gray-700 flex items-center gap-2">
+                    ✏️ Edit
+                  </button>
+                  <button onClick={() => { setShowActions(false); setShowResolve(p => !p); }}
+                    className="w-full px-4 py-2.5 text-xs text-left text-amber-300 hover:bg-gray-700 flex items-center gap-2">
+                    🏁 Resolve
+                  </button>
+                  <div className="h-px bg-gray-700" />
+                  <button onClick={() => { setShowActions(false); setShowDelete(true); }}
+                    className="w-full px-4 py-2.5 text-xs text-left text-red-400 hover:bg-gray-700 flex items-center gap-2">
+                    🗑️ Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Tags */}
+        <div className="flex gap-1 flex-wrap mb-3">
+          {event.tags?.map(t => <span key={t} className="text-xs text-gray-500">#{t}</span>)}
+        </div>
+
+        {/* Options */}
+        <div className="flex flex-col gap-2 mb-3">
+          {event.options.map(o => {
+            const p        = pct(o.votes, tv);
+            const isMyPick = myPrediction?.optionId === o.id;
+            const isWinOpt = event.resolved && event.winner === o.id;
+            return (
+              <div key={o.id}>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className={`font-medium ${isMyPick ? "text-indigo-300" : "text-gray-300"}`}>
+                    {o.label}
+                    {isMyPick  && <span className="text-indigo-400"> ← your pick</span>}
+                    {isWinOpt && !isMyPick && <span className="text-emerald-400"> ✓ winner</span>}
+                  </span>
+                  <span className="text-gray-400">{p}% · 🪙 {o.pool.toLocaleString()}</span>
+                </div>
+                <ProgressBar pct={p} isWin={isWinOpt} isMyPick={isMyPick} />
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs text-gray-500">
+              👥 {tv} · 🪙 {event.totalPool.toLocaleString()} · by {event.createdByName}
+            </span>
+            <span className={`text-xs font-medium ${
+              event.resolved ? "text-gray-500"
+              : new Date(event.endsAt) < new Date() ? "text-red-400"
+              : new Date(event.endsAt) - new Date() < 3 * 86400000 ? "text-amber-400"
+              : "text-gray-500"
+            }`}>
+              {event.resolved ? "✅ Resolved"
+                : new Date(event.endsAt) < new Date() ? `⏰ Ended ${event.endsAt}`
+                : `⏳ Ends ${event.endsAt}`}
+            </span>
+          </div>
+
+          <div className="flex gap-2 items-center">
+            <button onClick={() => setShowComments(p => !p)}
+              className="text-xs px-2 py-1 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700">
+              💬
+            </button>
+            <ShareButton payload={eventSharePayload} label="" icon="📤"
+              className="text-xs px-2 py-1 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700" />
+            {predictionSharePayload && (
+              <ShareButton payload={predictionSharePayload} label="Share proof" icon="🏆"
+                className="text-xs px-2 py-1 rounded-lg bg-emerald-900/50 text-emerald-300 hover:bg-emerald-900" />
+            )}
+            {!myPrediction && !event.resolved && user && (
+              <button onClick={() => setShowPredict(p => !p)}
+                className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-semibold">
+                Predict
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Predict panel */}
+        {showPredict && (
+          <div className="border-t border-gray-800 pt-3 mt-2">
+            <div className="flex gap-2 mb-3">
+              {event.options.map(o => (
+                <button key={o.id} onClick={() => setSelectedOpt(o.id)}
+                  className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all
+                    ${selectedOpt === o.id ? "border-indigo-400 bg-indigo-700 text-white" : "border-gray-700 bg-gray-800 text-gray-300"}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 mb-3 flex-wrap">
+              {QUICK_STAKES.map(v => (
+                <button key={v} onClick={() => setStakeAmt(v)}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-all
+                    ${stakeAmt === v ? "border-indigo-500 bg-indigo-800 text-indigo-200" : "border-gray-700 bg-gray-800 text-gray-400"}`}>
+                  🪙 {v}
+                </button>
+              ))}
+              <input type="number" value={stakeAmt} min={10} max={dbUser?.tokens || 1000}
+                onChange={e => setStakeAmt(+e.target.value)}
+                className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handlePredict} disabled={!selectedOpt || staking}
+                className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 font-bold text-xs">
+                {staking ? "Staking..." : `Stake 🪙 ${stakeAmt}`}
+              </button>
+              <button onClick={() => setShowPredict(false)}
+                className="px-3 py-2 rounded-xl bg-gray-800 text-gray-400 text-xs">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Resolve panel */}
+        {showResolve && (
+          <div className="border-t border-gray-800 pt-3 mt-2">
+            <p className="text-xs text-gray-400 mb-2">Select the winning option:</p>
+            <div className="flex gap-2">
+              {event.options.map(o => (
+                <button key={o.id} onClick={() => handleResolve(o.id)} disabled={resolving}
+                  className="flex-1 py-2 rounded-xl border border-amber-700 bg-amber-900/30 hover:bg-amber-800/40 text-xs font-semibold disabled:opacity-40">
+                  {resolving ? "Resolving..." : o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Comments */}
+        {showComments && <CommentSection eventId={event.id} />}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between mb-2">
-      <div className="flex flex-col gap-0.5">
-  <span className="text-xs text-gray-500">
-    👥 {tv} · 🪙 {event.totalPool.toLocaleString()} · by {event.createdByName}
-  </span>
-  <span className={`text-xs font-medium ${
-    event.resolved
-      ? "text-gray-500"
-      : new Date(event.endsAt) < new Date()
-      ? "text-red-400"
-      : new Date(event.endsAt) - new Date() < 3 * 86400000
-      ? "text-amber-400"
-      : "text-gray-500"
-  }`}>
-    {event.resolved
-      ? `✅ Resolved`
-      : new Date(event.endsAt) < new Date()
-      ? `⏰ Ended ${event.endsAt}`
-      : `⏳ Ends ${event.endsAt}`
-    }
-  </span>
-</div>
-        <div className="flex gap-2 items-center">
-          {/* Comment button */}
-          <button onClick={() => setShowComments(p => !p)}
-            className="text-xs px-2 py-1 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700">
-            💬
-          </button>
-
-          {/* Share event button */}
-          <ShareButton
-            payload={eventSharePayload}
-            label=""
-            icon="📤"
-            className="text-xs px-2 py-1 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700"
-          />
-
-          {/* Share prediction proof (if already predicted) */}
-          {predictionSharePayload && (
-            <ShareButton
-              payload={predictionSharePayload}
-              label="Share proof"
-              icon="🏆"
-              className="text-xs px-2 py-1 rounded-lg bg-emerald-900/50 text-emerald-300 hover:bg-emerald-900"
-            />
-          )}
-
-          {/* Predict button */}
-          {!myPrediction && !event.resolved && user && (
-            <button onClick={() => setShowPredict(p => !p)}
-              className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-semibold">
-              Predict
-            </button>
-          )}
-
-          {/* Resolve button — only creator */}
-          {isCreator && !event.resolved && (
-            <button onClick={() => setShowResolve(p => !p)}
-              className="text-xs px-3 py-1 rounded-lg bg-amber-700 hover:bg-amber-600 font-semibold">
-              Resolve
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Predict panel */}
-      {showPredict && (
-        <div className="border-t border-gray-800 pt-3 mt-2">
-          <div className="flex gap-2 mb-3">
-            {event.options.map(o => (
-              <button key={o.id} onClick={() => setSelectedOpt(o.id)}
-                className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all
-                  ${selectedOpt === o.id ? "border-indigo-400 bg-indigo-700 text-white" : "border-gray-700 bg-gray-800 text-gray-300"}`}>
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2 mb-3 flex-wrap">
-            {QUICK_STAKES.map(v => (
-              <button key={v} onClick={() => setStakeAmt(v)}
-                className={`text-xs px-2 py-1 rounded-lg border transition-all
-                  ${stakeAmt === v ? "border-indigo-500 bg-indigo-800 text-indigo-200" : "border-gray-700 bg-gray-800 text-gray-400"}`}>
-                🪙 {v}
-              </button>
-            ))}
-            <input type="number" value={stakeAmt} min={10} max={dbUser?.tokens || 1000}
-              onChange={e => setStakeAmt(+e.target.value)}
-              className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none" />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handlePredict} disabled={!selectedOpt || staking}
-              className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 font-bold text-xs">
-              {staking ? "Staking..." : `Stake 🪙 ${stakeAmt}`}
-            </button>
-            <button onClick={() => setShowPredict(false)}
-              className="px-3 py-2 rounded-xl bg-gray-800 text-gray-400 text-xs">
-              Cancel
-            </button>
-          </div>
-        </div>
+      {/* Edit modal — rendered outside card */}
+      {showEdit && (
+        <EditEventModal
+          event={event}
+          hasPredictions={hasPreds}
+          onClose={() => setShowEdit(false)}
+        />
       )}
 
-      {/* Resolve panel */}
-      {showResolve && (
-        <div className="border-t border-gray-800 pt-3 mt-2">
-          <p className="text-xs text-gray-400 mb-2">Select the winning option:</p>
-          <div className="flex gap-2">
-            {event.options.map(o => (
-              <button key={o.id} onClick={() => handleResolve(o.id)} disabled={resolving}
-                className="flex-1 py-2 rounded-xl border border-amber-700 bg-amber-900/30 hover:bg-amber-800/40 text-xs font-semibold disabled:opacity-40">
-                {resolving ? "Resolving..." : o.label}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Delete modal — rendered outside card */}
+      {showDelete && (
+        <DeleteConfirmModal
+          event={event}
+          onClose={() => setShowDelete(false)}
+        />
       )}
-
-      {/* Comments */}
-      {showComments && <CommentSection eventId={event.id} />}
-    </div>
+    </>
   );
 }

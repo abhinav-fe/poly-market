@@ -172,3 +172,73 @@ export function subscribeComments(eventId, callback) {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
 }
+
+// ── Edit / Delete / Archive ───────────────
+
+/** Update an event — only creator or admin can call */
+export async function updateEvent(eventId, updates, currentUserId) {
+  const ref  = doc(db, "events", eventId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Event not found");
+
+  const data      = snap.data();
+  const isAdmin   = currentUserId === process.env.NEXT_PUBLIC_ADMIN_UID;
+  const isCreator = data.createdBy === currentUserId;
+  if (!isCreator && !isAdmin) throw new Error("Not authorized");
+  if (data.resolved) throw new Error("Cannot edit a resolved event");
+
+  // If options are being changed, ensure no predictions exist yet
+  if (updates.options) {
+    const predsSnap = await getDocs(predsCol(eventId));
+    if (!predsSnap.empty) throw new Error("Cannot edit options after predictions have been placed");
+  }
+
+  await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
+}
+
+/** Permanently delete an event */
+export async function deleteEvent(eventId, currentUserId) {
+  const ref  = doc(db, "events", eventId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Event not found");
+
+  const data      = snap.data();
+  const isAdmin   = currentUserId === process.env.NEXT_PUBLIC_ADMIN_UID;
+  const isCreator = data.createdBy === currentUserId;
+  if (!isCreator && !isAdmin) throw new Error("Not authorized");
+
+  // Delete all predictions subcollection first
+  const predsSnap = await getDocs(predsCol(eventId));
+  const batch     = db.batch();
+  predsSnap.docs.forEach(d => batch.delete(d.ref));
+  batch.delete(ref);
+  await batch.commit();
+}
+
+/** Archive an event — hides from feed but keeps data */
+export async function archiveEvent(eventId, currentUserId) {
+  const ref  = doc(db, "events", eventId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Event not found");
+
+  const data      = snap.data();
+  const isAdmin   = currentUserId === process.env.NEXT_PUBLIC_ADMIN_UID;
+  const isCreator = data.createdBy === currentUserId;
+  if (!isCreator && !isAdmin) throw new Error("Not authorized");
+
+  await updateDoc(ref, { archived: true, archivedAt: serverTimestamp() });
+}
+
+/** Unarchive an event */
+export async function unarchiveEvent(eventId, currentUserId) {
+  const ref  = doc(db, "events", eventId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Event not found");
+
+  const data      = snap.data();
+  const isAdmin   = currentUserId === process.env.NEXT_PUBLIC_ADMIN_UID;
+  const isCreator = data.createdBy === currentUserId;
+  if (!isCreator && !isAdmin) throw new Error("Not authorized");
+
+  await updateDoc(ref, { archived: false, archivedAt: null });
+}
