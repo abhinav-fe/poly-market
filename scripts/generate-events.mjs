@@ -1,18 +1,17 @@
+cat > scripts/generate-events.mjs << 'EOF'
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, Timestamp }      from "firebase-admin/firestore";
 
-// ── Init Firebase Admin ───────────────────
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 if (!getApps().length) {
   initializeApp({ credential: cert(serviceAccount) });
 }
 const db = getFirestore();
 
-// ── Config ────────────────────────────────
-const ADMIN_UID        = process.env.ADMIN_UID;          // your Firebase UID
-const GROQ_KEY         = process.env.GROQ_API_KEY;
-const EVENTS_PER_RUN   = 20;
-const TODAY            = new Date().toISOString().split("T")[0];
+const ADMIN_UID      = process.env.ADMIN_UID;
+const GROQ_KEY       = process.env.GROQ_API_KEY;
+const EVENTS_PER_RUN = 20;
+const TODAY          = new Date().toISOString().split("T")[0];
 
 const CATEGORIES = [
   "India Politics & Elections",
@@ -23,31 +22,26 @@ const CATEGORIES = [
   "Tech & Startups",
 ];
 
-// ── Step 1: Ask Claude to generate events ─
 async function generateEvents() {
-  console.log("🧠 Asking Claude to generate events...");
+  console.log("🧠 Asking Groq to generate events...");
 
   const prompt = `
 You are a prediction market curator. Today's date is ${TODAY}.
+Generate ${EVENTS_PER_RUN} exciting prediction events for an India-focused prediction platform.
 
-Your job is to generate ${EVENTS_PER_RUN} exciting, timely prediction events for an India-focused prediction platform covering current hot topics.
-
-Categories to cover (distribute evenly):
-${CATEGORIES.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+Categories (distribute evenly): ${CATEGORIES.join(", ")}
 
 Rules:
-- Each event must be based on something ACTUALLY happening right now or very soon
-- Each event must have EXACTLY 2 options (binary prediction)
-- Events must resolve within 7–90 days from today (${TODAY})
-- Be specific — mention real names, teams, companies, dates
-- Mix India-specific and global events
-- Make them genuinely uncertain (not obvious outcomes)
+- Based on real current or upcoming events
+- Exactly 2 options per event (binary)
+- Resolves within 7-90 days from ${TODAY}
+- Be specific with real names, teams, companies
+- Mix India and global events
 
-Respond ONLY with a valid JSON array. No explanation, no markdown, no backticks.
-Format:
+Respond ONLY with a valid JSON array, no explanation, no markdown:
 [
   {
-    "title": "Will India beat Australia in the 3rd Test at Melbourne?",
+    "title": "Will India beat Australia in the 3rd Test?",
     "category": "Cricket & Sports",
     "tags": ["India", "Australia", "Test Cricket"],
     "endsAt": "2025-01-05",
@@ -56,60 +50,53 @@ Format:
       { "id": "no",  "label": "No ❌" }
     ]
   }
-]
-`;
+]`;
 
-  // Gemini 2.0 Flash — free tier, supports Google Search grounding
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
-
-  const res = await fetch(url, {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${GROQ_KEY}`,
+    },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      tools: [{ googleSearch: {} }],   // grounding with live Google Search
-      generationConfig: {
-        temperature:     1,
-        maxOutputTokens: 4000,
-        responseMimeType: "application/json",  // force JSON output
-      },
+      model:       "llama-3.3-70b-versatile",
+      temperature: 0.8,
+      max_tokens:  4000,
+      messages: [
+        { role: "system", content: "You are a prediction market curator. Always respond with valid JSON only. No explanation, no markdown, no backticks." },
+        { role: "user",   content: prompt },
+      ],
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Gemini API error: ${err}`);
+    throw new Error(`Groq API error: ${err}`);
   }
 
   const data  = await res.json();
-  const raw   = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!raw) throw new Error("No content in Gemini response");
+  const raw   = data.choices?.[0]?.message?.content;
+  if (!raw) throw new Error("No content in Groq response");
 
-  // Strip any accidental markdown fences just in case
   const clean  = raw.replace(/```json|```/g, "").trim();
   const events = JSON.parse(clean);
-  console.log(`✅ Claude generated ${events.length} events`);
+  console.log(`✅ Groq generated ${events.length} events`);
   return events;
 }
 
-// ── Step 2: Check for duplicates ──────────
 async function filterDuplicates(events) {
-  // Get events created in last 3 days to avoid near-duplicate titles
   const snap = await db.collection("events")
     .where("isOfficial", "==", true)
     .where("createdAt", ">=", Timestamp.fromDate(new Date(Date.now() - 3 * 86400000)))
     .get();
-
   const recentTitles = new Set(snap.docs.map(d => d.data().title.toLowerCase()));
   const filtered = events.filter(e => !recentTitles.has(e.title.toLowerCase()));
   console.log(`🔍 ${events.length - filtered.length} duplicates removed, ${filtered.length} new events`);
   return filtered;
 }
 
-// ── Step 3: Save to Firestore ─────────────
 async function saveEvents(events) {
   if (!events.length) { console.log("⚠️  No new events to save."); return; }
-
   const batch = db.batch();
   for (const e of events) {
     const ref = db.collection("events").doc();
@@ -122,23 +109,21 @@ async function saveEvents(events) {
       totalPool:     0,
       resolved:      false,
       winner:        null,
-      isOfficial:    true,           // marks as admin/official event
+      isOfficial:    true,
       createdBy:     ADMIN_UID,
       createdByName: "PredictIndia Official",
       createdAt:     Timestamp.now(),
       generatedDate: TODAY,
     });
   }
-
   await batch.commit();
   console.log(`🚀 Saved ${events.length} events to Firestore!`);
 }
 
-// ── Main ──────────────────────────────────
 async function main() {
   try {
-    if (!ADMIN_UID)  throw new Error("ADMIN_UID env var missing");
-    if (!GROQ_KEY)   throw new Error("GROQ_API_KEY env var missing");
+    if (!ADMIN_UID) throw new Error("ADMIN_UID env var missing");
+    if (!GROQ_KEY)  throw new Error("GROQ_API_KEY env var missing");
     if (!process.env.FIREBASE_SERVICE_ACCOUNT) throw new Error("FIREBASE_SERVICE_ACCOUNT env var missing");
 
     const raw      = await generateEvents();
@@ -153,3 +138,4 @@ async function main() {
 }
 
 main();
+EOF
