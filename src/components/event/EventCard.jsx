@@ -6,23 +6,25 @@ import { totalVotes, pct } from "@/utils/helpers";
 import Badge from "@/components/ui/Badge";
 import ProgressBar from "@/components/ui/ProgressBar";
 import CommentSection from "@/components/comments/CommentSection";
+import ShareButton from "@/components/share/ShareButton";
+import { buildEventShare, buildPredictionShare } from "@/components/share/useShare";
 import { QUICK_STAKES } from "@/constants";
 
 export default function EventCard({ event, myPrediction }) {
   const { user, dbUser } = useAuth();
-  const [showComments,  setShowComments]  = useState(false);
-  const [showPredict,   setShowPredict]   = useState(false);
-  const [selectedOpt,   setSelectedOpt]   = useState(null);
-  const [stakeAmt,      setStakeAmt]      = useState(100);
-  const [staking,       setStaking]       = useState(false);
-  const [resolving,     setResolving]     = useState(false);
-  const [toast,         setToast]         = useState(null);
-  const [showResolve,   setShowResolve]   = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [showPredict,  setShowPredict]  = useState(false);
+  const [selectedOpt,  setSelectedOpt]  = useState(null);
+  const [stakeAmt,     setStakeAmt]     = useState(100);
+  const [staking,      setStaking]      = useState(false);
+  const [resolving,    setResolving]    = useState(false);
+  const [showResolve,  setShowResolve]  = useState(false);
+  const [toast,        setToast]        = useState(null);
 
-  const tv         = totalVotes(event);
-  const isCreator  = user?.uid === event.createdBy;
-  const isWinner   = myPrediction && event.resolved && event.winner === myPrediction.optionId;
-  const isLoser    = myPrediction && event.resolved && event.winner !== myPrediction.optionId;
+  const tv        = totalVotes(event);
+  const isCreator = user?.uid === event.createdBy;
+  const isWinner  = myPrediction && event.resolved && event.winner === myPrediction.optionId;
+  const isLoser   = myPrediction && event.resolved && event.winner !== myPrediction.optionId;
 
   const showMsg = (msg, type = "success") => {
     setToast({ msg, type });
@@ -56,6 +58,9 @@ export default function EventCard({ event, myPrediction }) {
     }
   };
 
+  const eventSharePayload      = buildEventShare(event);
+  const predictionSharePayload = myPrediction ? buildPredictionShare(event, myPrediction) : null;
+
   return (
     <div className={`rounded-2xl border p-4 bg-gray-900 relative
       ${event.resolved ? "border-gray-700 opacity-90" : "border-gray-700"}
@@ -75,7 +80,8 @@ export default function EventCard({ event, myPrediction }) {
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <Badge category={event.category} />
-            {event.resolved && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">Resolved</span>}
+            {event.isOfficial && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-800 text-indigo-200 font-bold">🔮 Official</span>}
+            {event.resolved   && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">Resolved</span>}
             {isWinner && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-700 text-emerald-200 font-bold">✅ You called it!</span>}
             {isLoser  && <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-300">❌ Wrong call</span>}
           </div>
@@ -98,7 +104,8 @@ export default function EventCard({ event, myPrediction }) {
             <div key={o.id}>
               <div className="flex justify-between text-xs mb-1">
                 <span className={`font-medium ${isMyPick ? "text-indigo-300" : "text-gray-300"}`}>
-                  {o.label} {isMyPick && <span className="text-indigo-400">← your pick</span>}
+                  {o.label}
+                  {isMyPick  && <span className="text-indigo-400"> ← your pick</span>}
                   {isWinOpt && !isMyPick && <span className="text-emerald-400"> ✓ winner</span>}
                 </span>
                 <span className="text-gray-400">{p}% · 🪙 {o.pool.toLocaleString()}</span>
@@ -111,20 +118,61 @@ export default function EventCard({ event, myPrediction }) {
 
       {/* Footer */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-gray-500">
-          👥 {tv} · 🪙 {event.totalPool.toLocaleString()} pool · by {event.createdByName}
-        </span>
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-0.5">
+  <span className="text-xs text-gray-500">
+    👥 {tv} · 🪙 {event.totalPool.toLocaleString()} · by {event.createdByName}
+  </span>
+  <span className={`text-xs font-medium ${
+    event.resolved
+      ? "text-gray-500"
+      : new Date(event.endsAt) < new Date()
+      ? "text-red-400"
+      : new Date(event.endsAt) - new Date() < 3 * 86400000
+      ? "text-amber-400"
+      : "text-gray-500"
+  }`}>
+    {event.resolved
+      ? `✅ Resolved`
+      : new Date(event.endsAt) < new Date()
+      ? `⏰ Ended ${event.endsAt}`
+      : `⏳ Ends ${event.endsAt}`
+    }
+  </span>
+</div>
+        <div className="flex gap-2 items-center">
+          {/* Comment button */}
           <button onClick={() => setShowComments(p => !p)}
             className="text-xs px-2 py-1 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700">
             💬
           </button>
+
+          {/* Share event button */}
+          <ShareButton
+            payload={eventSharePayload}
+            label=""
+            icon="📤"
+            className="text-xs px-2 py-1 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700"
+          />
+
+          {/* Share prediction proof (if already predicted) */}
+          {predictionSharePayload && (
+            <ShareButton
+              payload={predictionSharePayload}
+              label="Share proof"
+              icon="🏆"
+              className="text-xs px-2 py-1 rounded-lg bg-emerald-900/50 text-emerald-300 hover:bg-emerald-900"
+            />
+          )}
+
+          {/* Predict button */}
           {!myPrediction && !event.resolved && user && (
             <button onClick={() => setShowPredict(p => !p)}
               className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-semibold">
               Predict
             </button>
           )}
+
+          {/* Resolve button — only creator */}
           {isCreator && !event.resolved && (
             <button onClick={() => setShowResolve(p => !p)}
               className="text-xs px-3 py-1 rounded-lg bg-amber-700 hover:bg-amber-600 font-semibold">
@@ -171,7 +219,7 @@ export default function EventCard({ event, myPrediction }) {
         </div>
       )}
 
-      {/* Resolve panel — only for creator */}
+      {/* Resolve panel */}
       {showResolve && (
         <div className="border-t border-gray-800 pt-3 mt-2">
           <p className="text-xs text-gray-400 mb-2">Select the winning option:</p>
@@ -191,9 +239,3 @@ export default function EventCard({ event, myPrediction }) {
     </div>
   );
 }
-// NOTE: OfficialBadge is rendered inside EventCard header via isOfficial prop
-// The EventCard already receives the full event object including isOfficial
-// The badge rendering is handled inline in the header section
-// NOTE: OfficialBadge is rendered inside EventCard header via isOfficial prop
-// The EventCard already receives the full event object including isOfficial
-// The badge rendering is handled inline in the header section

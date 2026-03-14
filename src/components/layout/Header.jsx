@@ -1,10 +1,11 @@
 "use client";
-
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useApp }  from "@/store/AppContext";
 import { useAuth } from "@/store/AuthContext";
 import TokenChip   from "@/components/ui/TokenChip";
+import ShareButton from "@/components/share/ShareButton";
+import { buildAppShare } from "@/components/share/useShare";
 
 const TABS = [
   { href: "/feed",        label: "🏠 Feed"    },
@@ -13,13 +14,13 @@ const TABS = [
 ];
 
 export default function Header() {
-  const { me, myRank }  = useApp();
+  const { me, myRank }   = useApp();
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const router   = useRouter();
 
   const isAuthPage = pathname === "/login" || pathname === "/signup";
-  if (isAuthPage) return null; // Hide header on auth pages
+  if (isAuthPage) return null;
 
   const handleLogout = async () => {
     await logout();
@@ -36,9 +37,17 @@ export default function Header() {
         </div>
 
         {/* Right side */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <TokenChip amount={me.tokens} />
           <span className="text-sm bg-gray-800 rounded-full px-3 py-1 text-gray-300">#{myRank}</span>
+
+          {/* App share button */}
+          <ShareButton
+            payload={buildAppShare()}
+            label=""
+            icon="📤"
+            className="w-8 h-8 rounded-full bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-sm"
+          />
 
           {/* User avatar + logout */}
           {user && (
@@ -50,7 +59,7 @@ export default function Header() {
                   </div>
               }
               <button onClick={handleLogout}
-                className="text-xs text-gray-400 hover:text-red-400 transition-colors">
+                className="text-xs text-gray-400 hover:text-red-400 transition-colors hidden sm:block">
                 Logout
               </button>
             </div>

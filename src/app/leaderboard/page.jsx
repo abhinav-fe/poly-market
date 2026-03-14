@@ -1,22 +1,35 @@
 "use client";
 import { useAuth }        from "@/store/AuthContext";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
-import AuthGuard  from "@/components/auth/AuthGuard";
-import TokenChip  from "@/components/ui/TokenChip";
+import AuthGuard   from "@/components/auth/AuthGuard";
+import TokenChip   from "@/components/ui/TokenChip";
+import ShareButton from "@/components/share/ShareButton";
+import { buildLeaderboardShare } from "@/components/share/useShare";
 
 const MEDALS = ["🥇","🥈","🥉"];
-
 function accuracy(u) { return u.total === 0 ? 0 : Math.round((u.correct / u.total) * 100); }
 
 export default function LeaderboardPage() {
-  const { user }              = useAuth();
+  const { user }                 = useAuth();
   const { leaderboard, loading } = useLeaderboard();
+  const me = leaderboard.find(u => u.id === user?.uid);
 
   return (
     <AuthGuard>
       <div className="px-4 pb-24 pt-2">
-        <h2 className="text-lg font-bold mb-1">🏆 Top Predictors</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-bold">🏆 Top Predictors</h2>
+          {me && (
+            <ShareButton
+              payload={buildLeaderboardShare(me, me.rank)}
+              label="Share my rank"
+              icon="🏆"
+              className="text-xs px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1"
+            />
+          )}
+        </div>
         <p className="text-xs text-gray-500 mb-4">Ranked by token wealth · non-redeemable</p>
+
         {loading ? (
           <div className="flex flex-col gap-3">
             {[1,2,3,4].map(i => <div key={i} className="h-16 rounded-2xl bg-gray-800 animate-pulse" />)}

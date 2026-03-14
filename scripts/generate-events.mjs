@@ -31,10 +31,16 @@ Generate ${EVENTS_PER_RUN} exciting prediction events for an India-focused predi
 Categories (distribute evenly): ${CATEGORIES.join(", ")}
 
 Rules:
-- Based on real current or upcoming events
+- Based on REAL events happening TODAY or this week
 - Exactly 2 options per event (binary)
-- Resolves within 7-90 days from ${TODAY}
-- Be specific with real names, teams, companies
+- End dates MUST follow this distribution:
+  * 5 events ending TODAY (${TODAY}) — live matches, same-day results
+  * 5 events ending within 3 days — imminent outcomes
+  * 5 events ending within 7 days — this week's events  
+  * 5 events ending within 30 days — this month MAX
+  * NEVER set endsAt beyond 30 days from ${TODAY}
+- Be hyper-specific — real player names, match scores, bill numbers, film release dates
+- Prioritize events with outcomes ALREADY known or very close
 - Mix India and global events
 
 Respond ONLY with a valid JSON array, no explanation, no markdown:
